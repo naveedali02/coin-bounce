@@ -146,7 +146,7 @@ const authController = {
   },
   async logout(req, res, next) {
     // delete refresh token from db
-    const { refreshToken } = req.cookie;
+    const { refreshToken } = req.cookies;
     try {
       await RefreshToken.deleteOne({ token: refreshToken });
     } catch (error) {
@@ -157,6 +157,59 @@ const authController = {
     res.clearCookie("refreshToken");
     // response
     res.status(200).json({ user: null, auth: false });
+  },
+  async refresh(req, res, next) {
+    // 1. get refresh token from cookies
+    // 2. verify refreshToken
+    // 3. Generate new tokens
+    // 4. update db, return response
+    const orignalRefreshToken = req.cookies.refreshToken;
+    let id;
+    try {
+      id = JWTService.verifyRefreshToken(orignalRefreshToken)._id;
+    } catch (e) {
+      const error = {
+        status: 401,
+        message: "Unauthorized",
+      };
+      return next(error);
+    }
+    try {
+      const match = RefreshToken.findOne({
+        _id: id,
+        token: orignalRefreshToken,
+      });
+      if (!match) {
+        const error = {
+          status: 401,
+          message: "Unauthorized",
+        };
+        return next(error);
+      }
+    } catch (e) {
+      return next(e);
+    }
+
+    try {
+      const accessToken = JWTService.signAccessToken({ _id: id }, "30m");
+      const refreshToken = JWTService.signRefreshToken({ _id: id }, "60m");
+      await RefreshToken.updateOne({ _id: id }, { token: refreshToken });
+      res.cookie("accessToken", accessToken, {
+        maxAge: 1000 * 60 * 24 * 24,
+        httpOnly: true,
+      });
+
+      res.cookie("refreshToken", refreshToken, {
+        maxAge: 1000 * 60 * 24 * 24,
+        httpOnly: true,
+      });
+    } catch (e) {
+      return next(e);
+    }
+
+    const user = await User.findOne({ _id: id });
+    const userDto = new UserDto(user);
+    return res.status(200).json({ user: userDto, auth: true });
   },
 };
 module.exports = authController;

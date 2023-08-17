@@ -13,6 +13,7 @@ app.use(express.json());
 app.use(router);
 // database connected
 dbConnect();
+app.use("/storage", express.static("storage"));
 // error handling
 app.use(errorHandler);
 
